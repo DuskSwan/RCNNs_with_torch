@@ -7,6 +7,7 @@ Created on Tue Oct 17 16:39:39 2023
 
 import os
 import torch
+from PIL import Image
 
 from packs.engine import train_one_epoch, evaluate
 from packs import utils
@@ -22,7 +23,12 @@ def get_transform(train):
         transforms.append(T.RandomHorizontalFlip(0.5)) # flip img 
     return T.Compose(transforms)
 
-
+def test(img,model,device):
+    model.eval()
+    with torch._no_grad(): prediction = model([img.to(device)])
+    Image.fromarray(img.mul(255).permute(1,2,0).byte().numpy) # 原图
+    Image.fromarray(prediction[0]['masks'][0,0].mul(255).byte().cpu().numpy) # mask
+ 
 def main(workdir):
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -78,6 +84,10 @@ def main(workdir):
 
     print("That's it!")
     
+    img = dataset_test[0]
+    test(img,model,device)
+    
+   
 if __name__ == "__main__":
     curdir = os.getcwd() #当前工作目录
     main(curdir)
