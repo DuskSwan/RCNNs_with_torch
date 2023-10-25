@@ -26,22 +26,23 @@ def get_transform(train):
 
 def test_model(dataset,model,device,save_path=r'./res'):
     model.eval()
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
     for idx, (img, target) in enumerate(dataset):
         print(f'dealing idx:{idx}')
-        originImg =  Image.fromarray(img.mul(255).permute(1,2,0).byte().numpy)
-        trueMask = Image.fromarray(target['masks'][0,0].mul(255).byte().cpu().numpy)
+        originImg =  Image.fromarray(img.mul(255).permute(1,2,0).byte().numpy())
+        # trueMask = Image.fromarray(target['masks'][0,0].mul(255).byte().cpu().numpy())
         with torch.no_grad(): prediction = model([img.to(device)])
-        predMask = Image.fromarray(prediction[0]['masks'][0,0].mul(255).byte().cpu().numpy)
+        predMask = Image.fromarray(prediction[0]['masks'][0,0].mul(255).byte().cpu().numpy())
         originImg.save(os.path.join(save_path,f'origin_{idx}.jpg'))
-        trueMask.save(os.path.join(save_path,f'trueMask_{idx}.jpg'))
+        # trueMask.save(os.path.join(save_path,f'trueMask_{idx}.jpg'))
         predMask.save(os.path.join(save_path,f'predMask_{idx}.jpg'))
         print(f'dealing idx:{idx} done')
-
-    return (originImg,predMask)
  
 def main(workdir):
     # train on the GPU or on the CPU, if a GPU is not available
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    print(device)
 
     # our dataset has two classes only - background and person
     num_classes = 2
@@ -58,11 +59,11 @@ def main(workdir):
 
     # define training and validation data loaders
     data_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=2, shuffle=True, num_workers=4,
+        dataset, batch_size=8, shuffle=True, num_workers=4,
         collate_fn=utils.collate_fn)
 
     data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=1, shuffle=False, num_workers=4,
+        dataset_test, batch_size=4, shuffle=False, num_workers=4,
         collate_fn=utils.collate_fn)
 
     # get the model using our helper function
@@ -82,8 +83,9 @@ def main(workdir):
                                                    gamma=0.1)
 
     # let's train it for some epochs
-    num_epochs = 1
+    num_epochs = 10
 
+    print('start training')
     for epoch in range(num_epochs):
         # train for one epoch, printing every 10 iterations
         train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq=10)
@@ -94,32 +96,32 @@ def main(workdir):
 
     print("That's it!")
 
-    save_path = './model/model_trained.pth'
-    torch.save(model, save_path)
-    weight_save_path = './model/model_trained_weights.pth'
-    torch.save(model.state_dict(), weight_save_path)
+    model_dir = os.path.join(workdir, 'model')
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    save_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    model_save_name = save_time + 'model.pth'
+    weight_save_name = save_time + 'model_weights.pth'
+    torch.save(model, os.path.join(model_dir, model_save_name))
+    torch.save(model.state_dict(), os.path.join(model_dir, weight_save_name))
 
-    save_path = './res'
-    test_model(dataset_test,model,device,save_path)
+    res_save_path = './res'
+    test_model(dataset_test,model,device,res_save_path)
    
 if __name__ == "__main__":
+    curdir = os.getcwd()  # 当前工作目录
+    print(curdir,'project start')
+
     # 定义一个文件路径，用于保存日志信息
     current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     log_file_path = f'.\\log\\training_log_{current_time}.txt'
-
     # 保存标准输出流到一个文件
     original_stdout = sys.stdout
-
-    # with open(log_file_path, 'w') as log_file:
-
     log_file = open(log_file_path, 'w')
     sys.stdout = log_file
-
-    curdir = os.getcwd() #当前工作目录
     main(curdir)
-
     # 恢复标准输出流
     sys.stdout = original_stdout
-
     # 关闭 log_file
     log_file.close()
+
