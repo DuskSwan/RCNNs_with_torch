@@ -14,7 +14,7 @@ from packs.engine import train_one_epoch, evaluate
 from packs import utils
 from packs import transforms as T
 
-from data_manager import PennFudanDataset
+from data_manager import PennFudanDataset, hangcai03Dataset
 from model_loader import get_model_instance_segmentation
 
 def get_transform(train):
@@ -31,26 +31,17 @@ def test_model(dataset,model,device,save_path=r'./res'):
     for idx, (img, target) in enumerate(dataset):
         print(f'dealing idx:{idx}')
         originImg =  Image.fromarray(img.mul(255).permute(1,2,0).byte().numpy())
-        # trueMask = Image.fromarray(target['masks'][0,0].mul(255).byte().cpu().numpy())
-        with torch.no_grad(): prediction = model([img.to(device)])
+        trueMask = Image.fromarray(target['masks'][0].mul(255).byte().cpu().numpy())
+        with torch.no_grad(): prediction = model( [img.to(device)] )
         predMask = Image.fromarray(prediction[0]['masks'][0,0].mul(255).byte().cpu().numpy())
         originImg.save(os.path.join(save_path,f'origin_{idx}.jpg'))
-        # trueMask.save(os.path.join(save_path,f'trueMask_{idx}.jpg'))
+        trueMask.save(os.path.join(save_path,f'trueMask_{idx}.jpg'))
         predMask.save(os.path.join(save_path,f'predMask_{idx}.jpg'))
         print(f'dealing idx:{idx} done')
- 
-def main(workdir):
-    # train on the GPU or on the CPU, if a GPU is not available
-    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    print(device)
 
-    # our dataset has two classes only - background and person
-    num_classes = 2
-    # use our dataset and defined transformations
-    dataset_cont = os.path.join(workdir,'data','PennFudanPed')
-    dataset = PennFudanDataset(dataset_cont, get_transform(train=True))
-    dataset_test = PennFudanDataset(dataset_cont, get_transform(train=False))
-
+def train(workdir,device,
+          dataset,dataset_test,num_classes=2):
+    
     # split the dataset in train and test set
     torch.manual_seed(1)
     indices = torch.randperm(len(dataset)).tolist()
@@ -59,11 +50,11 @@ def main(workdir):
 
     # define training and validation data loaders
     data_loader = torch.utils.data.DataLoader(
-        dataset, batch_size=8, shuffle=True, num_workers=4,
+        dataset, batch_size=2, shuffle=True, num_workers=4,
         collate_fn=utils.collate_fn)
 
     data_loader_test = torch.utils.data.DataLoader(
-        dataset_test, batch_size=4, shuffle=False, num_workers=4,
+        dataset_test, batch_size=1, shuffle=False, num_workers=4,
         collate_fn=utils.collate_fn)
 
     # get the model using our helper function
@@ -105,23 +96,49 @@ def main(workdir):
     torch.save(model, os.path.join(model_dir, model_save_name))
     torch.save(model.state_dict(), os.path.join(model_dir, weight_save_name))
 
-    res_save_path = './res'
+    return (model,model_dir,save_time)
+
+def log_decorator(func):
+    def wrapper(*args, **kwargs):
+        current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        log_file_path = f'.\\log\\training_log_{current_time}.txt'
+        
+        original_stdout = sys.stdout # 保存标准输出流到一个文件
+        log_file = open(log_file_path, 'w')
+        sys.stdout = log_file
+        func(*args, **kwargs)
+
+        sys.stdout = original_stdout # 恢复标准输出流
+        log_file.close() # 关闭 log_file
+    return wrapper
+
+def model_load(name):
+    cont = r'.\model'
+    model = torch.load(os.path.join(cont,name))
+    return model
+
+@log_decorator
+def main(workdir):
+    # train on the GPU or on the CPU, if a GPU is not available
+    device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    print(device)
+
+    # our dataset has two classes only - background and person
+    num_classes = 2
+    # use our dataset and defined transformations
+    dataset_cont = os.path.join(workdir,'data','PennFudanPed')
+    dataset = PennFudanDataset(dataset_cont, get_transform(train=True))
+    dataset_test = PennFudanDataset(dataset_cont, get_transform(train=False))
+
+    model,_,_ = train(workdir,device,dataset,dataset_test,num_classes)
+
+    save_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    res_save_path = r'./res/{}'.format(save_time)
     test_model(dataset_test,model,device,res_save_path)
    
 if __name__ == "__main__":
     curdir = os.getcwd()  # 当前工作目录
     print(curdir,'project start')
-
-    # 定义一个文件路径，用于保存日志信息
-    current_time = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    log_file_path = f'.\\log\\training_log_{current_time}.txt'
-    # 保存标准输出流到一个文件
-    original_stdout = sys.stdout
-    log_file = open(log_file_path, 'w')
-    sys.stdout = log_file
+    
     main(curdir)
-    # 恢复标准输出流
-    sys.stdout = original_stdout
-    # 关闭 log_file
-    log_file.close()
 
